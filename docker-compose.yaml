@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  gateway:
+    build: ./gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - ORDER_SERVICE_URL=http://order-service:8082
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    depends_on:
+      - auth-service
+      - order-service
+    networks:
+      - app-network # локальная сеть приложения
+    
+  # Сервис авторизации
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "8081:8081"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - PROMETHEUS_PORT=9464
+    networks:
+      - app-network
+    
+  # Сервис заказов (обработки данных)
+  order-service:
+    build: ./order-service
+    ports:
+      - "8082:8082"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - PROMETHEUS_PORT=9465
+    networks:
+      - app-network
+
+  # Приемник всего отел-коллектор
+  otel-collector:
+    build: ./otel-collector
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+      - "8889:8889"  # Prometheus metrics exposed by the collector
+    volumes:
+      - ./otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    networks:
+      - app-network
+
+  # Сервис прометея - внимательно к томам!!!
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - app-network
+
+  # Сервис графана
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+    depends_on:
+      - prometheus
+    networks:
+      - app-network
+
+# Конфиг сети 
+networks:
+  app-network:
+    driver: bridge
+
+
+    

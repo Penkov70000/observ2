@@ -1,0 +1,16 @@
+список протов для сервисов
+gateway ports: "8080:8080"
+auth-service    ports: "8081:8081"
+order-service   \ports: "8082:8082"
+
+Доступ к сервисам:
+
+Gateway: http://localhost:8080
+
+Auth Service: http://localhost:8081
+
+Order Service: http://localhost:8082
+
+Grafana: http://localhost:3000 (admin/admin)
+
+Prometheus: http://localhost:9090

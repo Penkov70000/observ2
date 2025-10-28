@@ -1,0 +1,35 @@
+# куда отправлять
+recievers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    const_labels:
+      source: "otel-collector"
+  logging:
+    loglevel: debug
+
+processors:
+  batch: # партия
+
+extensions:
+  health_check:
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      recievers: [otlp]
+      processors: [batch]
+      exporters: [prometheus, logging]
+    traces:
+      recievers: [otlp]
+      processors: [batch]
+      exporters: [logging]
+      
