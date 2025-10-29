@@ -54,7 +54,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "9090:9090"
+      - "9090:9090"  # Порт 9090: Это основной порт для доступа к веб-интерфейсу Prometheus и его API
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     networks:
@@ -67,8 +67,12 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_ISTALL_PLUGINS=grafana-clock-panel
     volumes:
       - ./grafana/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+      - ./grafana/dashboards/dashboard/yml:/etc/grafana/provisioning/dashboards/dashboard.yml
+      - ./grafana/dashboards-providers/provider.yml:/etc/grafana/provisioning/dashboards/dashboard.yml
+      - ./grafana/dashboards-json/:/var/lib/grafana/dashboards/
     depends_on:
       - prometheus
     networks:
