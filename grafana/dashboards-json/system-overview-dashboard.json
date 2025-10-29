@@ -1,0 +1,136 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "System Overview",
+    "tags": ["microservices", "overview"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "HTTP Requests Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(rate(gateway_requests_total[5m]))",
+            "legendFormat": "Gateway",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(auth_requests_total[5m]))",
+            "legendFormat": "Auth Service",
+            "refId": "B"
+          },
+          {
+            "expr": "sum(rate(order_requests_total[5m]))",
+            "legendFormat": "Order Service",
+            "refId": "C"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "HTTP Error Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(rate(gateway_requests_total{status=~\"5..\"}[5m])) / sum(rate(gateway_requests_total[5m])) * 100",
+            "legendFormat": "Gateway Error %",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "color": {"mode": "thresholds"}
+          },
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 5}
+            ]
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Service Health",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"auth-service\"}",
+            "legendFormat": "Auth Service",
+            "refId": "A"
+          },
+          {
+            "expr": "up{job=\"order-service\"}",
+            "legendFormat": "Order Service",
+            "refId": "B"
+          },
+          {
+            "expr": "up{job=\"gateway\"}",
+            "legendFormat": "Gateway",
+            "refId": "C"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "bool",
+            "color": {"mode": "thresholds"}
+          },
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 1}
+            ]
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "HTTP Requests by Service",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum by (job) (rate(gateway_requests_total[5m]))",
+            "legendFormat": "Gateway",
+            "refId": "A"
+          },
+          {
+            "expr": "sum by (job) (rate(auth_requests_total[5m]))",
+            "legendFormat": "Auth Service",
+            "refId": "B"
+          },
+          {
+            "expr": "sum by (job) (rate(order_requests_total[5m]))",
+            "legendFormat": "Order Service",
+            "refId": "C"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "color": {"mode": "palette-classic"}
+          }
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "5s"
+  }
+}
