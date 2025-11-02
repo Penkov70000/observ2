@@ -70,9 +70,9 @@ services:
       - GF_ISTALL_PLUGINS=grafana-clock-panel
     volumes:
       - ./grafana/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
-      - ./grafana/dashboards/dashboard/yml:/etc/grafana/provisioning/dashboards/dashboard.yml
+      #- ./grafana/dashboards/dashboard/yml:/etc/grafana/provisioning/dashboards/dashboard.yml
       - ./grafana/dashboards-providers/provider.yml:/etc/grafana/provisioning/dashboards/dashboard.yml
-      - ./grafana/dashboards-json/:/var/lib/grafana/dashboards/
+      - ./grafana/dashboards-json/:/var/lib/grafana/dashboards/ # Папка с JSON-файлами дашбордов
     depends_on:
       - prometheus
     networks:

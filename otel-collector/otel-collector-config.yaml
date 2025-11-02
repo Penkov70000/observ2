@@ -1,5 +1,5 @@
 # куда отправлять
-recievers:
+receivers:
   otlp:
     protocols:
       grpc:
@@ -25,11 +25,11 @@ service:
   extensions: [health_check]
   pipelines:
     metrics:
-      recievers: [otlp]
+      receivers: [otlp]
       processors: [batch]
       exporters: [prometheus, logging]
     traces:
-      recievers: [otlp]
+      receivers: [otlp]
       processors: [batch]
       exporters: [logging]
       
