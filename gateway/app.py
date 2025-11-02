@@ -48,7 +48,7 @@ def make_service_request(service_url, path, method='GET', data=None, headers=Non
             response = requests.get(url, headers=headers, timeout=30)
         elif method.upper() == 'POST':
             response = requests.post(url, json=data, headers=headers, timeout=30)
-        else:
+        else:   
             return jsonify({"error": "Method not allowed"}), 405
             
         return response.json(), response.status_code

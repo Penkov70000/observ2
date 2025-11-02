@@ -1,0 +1,2 @@
+pip install jwt
+pip install flask requests opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp opentelemetry-instrumentation-flask prometheus-client

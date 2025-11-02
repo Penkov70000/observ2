@@ -14,6 +14,10 @@ exporters:
       source: "otel-collector"
   logging:
     loglevel: debug
+  jaeger:
+    endpoint: jaeger:14250
+    tls:
+      insecure: true
 
 processors:
   batch: # партия
@@ -31,5 +35,5 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [logging]
+      exporters: [jaeger]
       

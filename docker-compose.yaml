@@ -8,7 +8,7 @@ services:
     environment:
       - AUTH_SERVICE_URL=http://auth-service:8081
       - ORDER_SERVICE_URL=http://order-service:8082
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
     depends_on:
       - auth-service
       - order-service
@@ -21,19 +21,24 @@ services:
     ports:
       - "8081:8081"
     environment:
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
-      - PROMETHEUS_PORT=9464
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      # - PROMETHEUS_PORT=9464
     networks:
       - app-network
-    
+      # Для gRPC: http://otel-collector:4317 
+      # → но клиент должен использовать gRPC.
+      # Для HTTP: http://otel-collector:4318/v1/traces 
+      # → и клиент должен использовать HTTP exporter.
+      # Вы используете HTTP-экспортёр 
+
   # Сервис заказов (обработки данных)
   order-service:
     build: ./order-service
     ports:
       - "8082:8082"
     environment:
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
-      - PROMETHEUS_PORT=9465
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      # - PROMETHEUS_PORT=9465
     networks:
       - app-network
 
@@ -49,6 +54,13 @@ services:
     command: ["--config=/etc/otel-collector-config.yaml"]
     networks:
       - app-network
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"  # UI
 
   # Сервис прометея - внимательно к томам!!!
   prometheus:
@@ -67,11 +79,12 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_ISTALL_PLUGINS=grafana-clock-panel
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
     volumes:
       - ./grafana/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
       #- ./grafana/dashboards/dashboard/yml:/etc/grafana/provisioning/dashboards/dashboard.yml
-      - ./grafana/dashboards-providers/provider.yml:/etc/grafana/provisioning/dashboards/dashboard.yml
+      # - ./grafana/dashboards-providers/provider.yml:/etc/grafana/provisioning/dashboards/dashboard.yml - может быть неочевидным
+      - ./grafana/provisioning/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/default.yml
       - ./grafana/dashboards-json/:/var/lib/grafana/dashboards/ # Папка с JSON-файлами дашбордов
     depends_on:
       - prometheus

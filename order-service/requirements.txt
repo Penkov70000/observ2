@@ -7,3 +7,5 @@ opentelemetry-exporter-otlp==1.18.0
 opentelemetry-instrumentation-flask==0.39b0
 opentelemetry-instrumentation-requests==0.39b0
 gunicorn==21.2.0
+jwt
+requests
