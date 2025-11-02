@@ -11,3 +11,4 @@ datasources:
       timeInterval: 5s
       queryTimeout: 60s
       httpMethod: POST
+# Здесь была ошибка с лишним isDefault
