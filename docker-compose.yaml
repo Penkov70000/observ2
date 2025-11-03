@@ -44,11 +44,16 @@ services:
 
   # Приемник всего отел-коллектор
   otel-collector:
-    build: ./otel-collector
+    #build: ./otel-collector
+    # ВАРИАНТ БЕЗ кастомного dockerfile, то есть только из исходного образа
+    container_name: otel-collector
+    image: otel/opentelemetry-collector-contrib:latest  # ← используйте официальный contrib-образ
     ports:
       - "4317:4317"  # OTLP gRPC
       - "4318:4318"  # OTLP HTTP
       - "8889:8889"  # Prometheus metrics exposed by the collector
+      # → Это нужно только если вы хотите отправлять данные извне Docker (например, с хоста).
+      # Для внутреннего трафика (сервис → collector) проброс портов не требуется. Но оставить можно — для отладки
     volumes:
       - ./otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
     command: ["--config=/etc/otel-collector-config.yaml"]
@@ -72,6 +77,17 @@ services:
     networks:
       - app-network
 
+  # tempo:
+  #   image: grafana/tempo:2.5.2
+  #   command: ["-config.file=/etc/tempo.yaml"]
+  #   volumes:
+  #     - ./tempo/:/etc/tempo.yaml
+  #     - tempo_data:/tmp/tempo
+  #   ports:
+  #     - "3200:3200"   # Tempo API
+  #     - "4317:4317"   # OTLP gRPC (если включен в tempo.yaml)
+  #     - "4318:4318"   # OTLP HTTP
+
   # Сервис графана
   grafana:
     image: grafana/grafana:latest
@@ -83,8 +99,8 @@ services:
     volumes:
       - ./grafana/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
       #- ./grafana/dashboards/dashboard/yml:/etc/grafana/provisioning/dashboards/dashboard.yml
-      # - ./grafana/dashboards-providers/provider.yml:/etc/grafana/provisioning/dashboards/dashboard.yml - может быть неочевидным
-      - ./grafana/provisioning/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/default.yml
+      - ./grafana/dashboards-providers/provider.yml:/etc/grafana/provisioning/dashboards/dashboard.yml - может быть неочевидным
+      #- ./grafana/provisioning/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/default.yml
       - ./grafana/dashboards-json/:/var/lib/grafana/dashboards/ # Папка с JSON-файлами дашбордов
     depends_on:
       - prometheus
@@ -95,6 +111,7 @@ services:
 networks:
   app-network:
     driver: bridge
+    # Все сервисы в одной сети app-network → DNS-резолвинг работает.
 
 
     
