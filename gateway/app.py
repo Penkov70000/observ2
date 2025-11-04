@@ -38,6 +38,24 @@ gateway_request_duration = Histogram(
     ['method', 'endpoint']
 )
 
+# def make_service_request(service_url, path, method='GET', data=None, headers=None):
+#     """Make request to backend service"""
+#     url = f"{service_url}{path}"
+#     headers = headers or {}
+    
+#     try:
+#         if method.upper() == 'GET':
+#             response = requests.get(url, headers=headers, timeout=30)
+#         elif method.upper() == 'POST':
+#             response = requests.post(url, json=data, headers=headers, timeout=30)
+#         else:   
+#             return jsonify({"error": "Method not allowed"}), 405
+            
+#         return response.json(), response.status_code
+#     except requests.exceptions.RequestException as e:
+#         return jsonify({"error": f"Service unavailable: {str(e)}"}), 503
+
+
 def make_service_request(service_url, path, method='GET', data=None, headers=None):
     """Make request to backend service"""
     url = f"{service_url}{path}"
@@ -48,12 +66,23 @@ def make_service_request(service_url, path, method='GET', data=None, headers=Non
             response = requests.get(url, headers=headers, timeout=30)
         elif method.upper() == 'POST':
             response = requests.post(url, json=data, headers=headers, timeout=30)
-        else:   
-            return jsonify({"error": "Method not allowed"}), 405
+        else:
+            return {"error": "Method not allowed"}, 405  # ← dict, не jsonify!
             
-        return response.json(), response.status_code
+        # Попытка распарсить JSON, даже если статус не 2xx
+        try:
+            json_data = response.json()
+        except ValueError:
+            json_data = {"error": "Invalid JSON response from service"}
+            
+        return json_data, response.status_code
+        
+    except requests.exceptions.Timeout:
+        return {"error": "Service timeout"}, 504
+    except requests.exceptions.ConnectionError:
+        return {"error": "Service unavailable"}, 503
     except requests.exceptions.RequestException as e:
-        return jsonify({"error": f"Service unavailable: {str(e)}"}), 503
+        return {"error": f"Request failed: {str(e)}"}, 500
 
 @app.before_request
 def before_request():

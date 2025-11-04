@@ -66,7 +66,7 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     ports:
       - "16686:16686"  # UI
-
+     
   # Сервис прометея - внимательно к томам!!!
   prometheus:
     image: prom/prometheus:latest

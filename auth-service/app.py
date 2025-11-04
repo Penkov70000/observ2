@@ -56,7 +56,7 @@ users = [
     {
         "id": 1,
         "username": "admin",
-        "password": bcrypt.hashpw("password".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        "password": "password"
     }
 ]
 # Пароль хешируется с помощью bcrypt:
@@ -127,7 +127,7 @@ def login():
 # Проверка JSON и обязательных полей.
 # Поиск пользователя по username.
 # Сравнение хеша пароля через bcrypt.checkpw() — безопасно, даже против атак по времени
-        
+
         return jsonify({
             "token": token,
             "user_id": user['id'],
