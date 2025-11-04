@@ -9,3 +9,5 @@ opentelemetry-instrumentation-flask==0.39b0
 opentelemetry-instrumentation-requests==0.39b0
 requests==2.31.0
 gunicorn==21.2.0
+jwt
+requests

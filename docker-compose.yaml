@@ -8,7 +8,7 @@ services:
     environment:
       - AUTH_SERVICE_URL=http://auth-service:8081
       - ORDER_SERVICE_URL=http://order-service:8082
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
     depends_on:
       - auth-service
       - order-service
@@ -21,44 +21,72 @@ services:
     ports:
       - "8081:8081"
     environment:
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
-      - PROMETHEUS_PORT=9464
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      # - PROMETHEUS_PORT=9464
     networks:
       - app-network
-    
+      # Для gRPC: http://otel-collector:4317 
+      # → но клиент должен использовать gRPC.
+      # Для HTTP: http://otel-collector:4318/v1/traces 
+      # → и клиент должен использовать HTTP exporter.
+      # Вы используете HTTP-экспортёр 
+
   # Сервис заказов (обработки данных)
   order-service:
     build: ./order-service
     ports:
       - "8082:8082"
     environment:
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
-      - PROMETHEUS_PORT=9465
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      # - PROMETHEUS_PORT=9465
     networks:
       - app-network
 
   # Приемник всего отел-коллектор
   otel-collector:
-    build: ./otel-collector
+    #build: ./otel-collector
+    # ВАРИАНТ БЕЗ кастомного dockerfile, то есть только из исходного образа
+    container_name: otel-collector
+    image: otel/opentelemetry-collector-contrib:latest  # ← используйте официальный contrib-образ
     ports:
       - "4317:4317"  # OTLP gRPC
       - "4318:4318"  # OTLP HTTP
       - "8889:8889"  # Prometheus metrics exposed by the collector
+      # → Это нужно только если вы хотите отправлять данные извне Docker (например, с хоста).
+      # Для внутреннего трафика (сервис → collector) проброс портов не требуется. Но оставить можно — для отладки
     volumes:
       - ./otel-collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
     command: ["--config=/etc/otel-collector-config.yaml"]
     networks:
       - app-network
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"  # UI
+
   # Сервис прометея - внимательно к томам!!!
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "9090:9090"
+      - "9090:9090"  # Порт 9090: Это основной порт для доступа к веб-интерфейсу Prometheus и его API
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     networks:
       - app-network
+
+  # tempo:
+  #   image: grafana/tempo:2.5.2
+  #   command: ["-config.file=/etc/tempo.yaml"]
+  #   volumes:
+  #     - ./tempo/:/etc/tempo.yaml
+  #     - tempo_data:/tmp/tempo
+  #   ports:
+  #     - "3200:3200"   # Tempo API
+  #     - "4317:4317"   # OTLP gRPC (если включен в tempo.yaml)
+  #     - "4318:4318"   # OTLP HTTP
 
   # Сервис графана
   grafana:
@@ -67,8 +95,13 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
     volumes:
       - ./grafana/datasources/datasource.yml:/etc/grafana/provisioning/datasources/datasource.yml
+      #- ./grafana/dashboards/dashboard/yml:/etc/grafana/provisioning/dashboards/dashboard.yml
+      - ./grafana/dashboards-providers/provider.yml:/etc/grafana/provisioning/dashboards/dashboard.yml - может быть неочевидным
+      #- ./grafana/provisioning/dashboards/provider.yml:/etc/grafana/provisioning/dashboards/default.yml
+      - ./grafana/dashboards-json/:/var/lib/grafana/dashboards/ # Папка с JSON-файлами дашбордов
     depends_on:
       - prometheus
     networks:
@@ -78,6 +111,7 @@ services:
 networks:
   app-network:
     driver: bridge
+    # Все сервисы в одной сети app-network → DNS-резолвинг работает.
 
 
     

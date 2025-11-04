@@ -1,5 +1,5 @@
 # куда отправлять
-recievers:
+receivers:
   otlp:
     protocols:
       grpc:
@@ -7,29 +7,63 @@ recievers:
       http:
         endpoint: 0.0.0.0:4318
 
+processors:
+  batch:
+
 exporters:
+  # Метрики → Prometheus
   prometheus:
     endpoint: "0.0.0.0:8889"
     const_labels:
       source: "otel-collector"
-  logging:
-    loglevel: debug
 
-processors:
-  batch: # партия
+  # Трассировки → Jaeger (через OTLP/gRPC)
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
 
-extensions:
-  health_check:
+  # Отладка (временно!)
+  debug:
+    verbosity: basic
+
+  # Логи → Loki (только если у вас есть логи!)
+  # otlphttp/loki:
+  #   endpoint: "http://loki:3100/otlp"
 
 service:
-  extensions: [health_check]
   pipelines:
-    metrics:
-      recievers: [otlp]
-      processors: [batch]
-      exporters: [prometheus, logging]
     traces:
-      recievers: [otlp]
+      receivers: [otlp]
       processors: [batch]
-      exporters: [logging]
-      
+      exporters: [otlp/jaeger, debug]  # debug можно убрать в продакшене
+
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus, debug]    # debug — временно
+
+    # logs:  # раскомментируйте, когда добавите логирование в приложения
+    #   receivers: [otlp]
+    #   processors: [batch]
+    #   exporters: [otlphttp/loki]
+
+
+  # otlp/2: # есть возможность с одного экспортера на две системы складывать логи
+  #   endpoint: "tempo:4317"
+
+  # extensions:
+  #   zpages:
+  #     endpoint: "0.0.0.0:55679"
+  #   health_check:
+  #   telemetry: # для анализа коллектора для девопса
+  #     logs:
+  #       level: "debug"
+  #     metrics:
+  #       level: detailed
+  #       readers:
+  #         - pull:
+  #             exporter:
+  #               prometheus:
+  #                 host: '0.0.0.0'
+  #                 port: 8888
