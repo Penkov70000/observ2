@@ -1,0 +1,91 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Order Service Metrics",
+    "tags": ["order", "microservices"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Order Request Rate",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(rate(order_requests_total[5m]))",
+            "legendFormat": "Total Order Requests",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Order Operations",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum by (endpoint) (rate(order_requests_total[5m]))",
+            "legendFormat": "{{endpoint}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Order Creation Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(rate(order_requests_total{endpoint=\"/orders\",method=\"POST\"}[5m]))",
+            "legendFormat": "Orders Created",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Order Service Errors",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "sum(rate(order_requests_total{status=~\"5..\"}[5m]))",
+            "legendFormat": "5xx Errors",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(rate(order_requests_total{status=~\"4..\"}[5m]))",
+            "legendFormat": "4xx Errors",
+            "refId": "B"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "Order Request Duration",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(order_request_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "p95 Duration",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "min": 0
+          }
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "5s"
+  }
+}

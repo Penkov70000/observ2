@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Auth Service{% endblock %}
+
+{% block content %}
+<div class="dashboard">
+    <h1>User Dashboard</h1>
+    
+    <div class="user-info">
+        <h2>Welcome, {{ current_user.username }}!</h2>
+        <div class="info-card">
+            <h3>Your Information</h3>
+            <p><strong>User ID:</strong> {{ current_user.id }}</p>
+            <p><strong>Username:</strong> {{ current_user.username }}</p>
+            <p><strong>Email:</strong> {{ current_user.email or 'Not provided' }}</p>
+        </div>
+    </div>
+
+    <div class="api-section">
+        <h3>API Access</h3>
+        <div class="token-card">
+            <h4>Your JWT Token:</h4>
+            <div class="token-display">
+                <code>{{ jwt_token }}</code>
+            </div>
+            <p class="token-note">Use this token for API requests in the Authorization header</p>
+        </div>
+        
+        <div class="api-examples">
+            <h4>API Examples:</h4>
+            <div class="example">
+                <strong>Verify Token:</strong>
+                <code>POST /api/verify<br>Authorization: Bearer {{ jwt_token }}</code>
+            </div>
+            <div class="example">
+                <strong>Get Profile:</strong>
+                <code>GET /api/profile<br>Authorization: Bearer {{ jwt_token }}</code>
+            </div>
+        </div>
+    </div>
+
+    <div class="actions">
+        <a href="{{ url_for('logout') }}" class="btn btn-secondary">Logout</a>
+        <a href="{{ url_for('index') }}" class="btn btn-primary">Back to Home</a>
+    </div>
+</div>
+{% endblock %}

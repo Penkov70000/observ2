@@ -1,0 +1,22 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy # — Grafana выступает как прокси: браузер → Grafana → Prometheus
+    url: http://prometheus:9090 # это адрес сервера Prometheus внутри Docker-сети.
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: 5s
+      queryTimeout: 60s
+      httpMethod: POST
+  - name: Jaeger
+    type: jaeger
+    url: http://jaeger:16686  # ← UI-порт Jaeger
+    access: proxy
+  - name: Loki
+    type: loki
+    url: http://loki:3100
+# Здесь была ошибка с лишним isDefault
+# Grafana и Prometheus находятся в одной сети app-network → DNS-имя prometheus разрешается коррект

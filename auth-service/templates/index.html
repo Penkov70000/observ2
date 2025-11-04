@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome - Auth Service{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h1>Welcome to Auth Service</h1>
+    <p class="subtitle">Secure authentication and user management</p>
+    
+    {% if current_user %}
+        <div class="welcome-message">
+            <h2>Hello, {{ current_user.username }}!</h2>
+            <p>You are successfully logged in.</p>
+            <div class="actions">
+                <a href="{{ url_for('dashboard') }}" class="btn btn-primary">Go to Dashboard</a>
+                <a href="{{ url_for('logout') }}" class="btn btn-secondary">Logout</a>
+            </div>
+        </div>
+    {% else %}
+        <div class="welcome-message">
+            <h2>Get Started</h2>
+            <p>Please login or register to access the dashboard.</p>
+            <div class="actions">
+                <a href="{{ url_for('login_page') }}" class="btn btn-primary">Login</a>
+                <a href="{{ url_for('register_page') }}" class="btn btn-secondary">Register</a>
+            </div>
+        </div>
+    {% endif %}
+
+    <div class="features">
+        <div class="feature-card">
+            <h3>🔐 Secure Authentication</h3>
+            <p>JWT-based authentication with bcrypt password hashing</p>
+        </div>
+        <div class="feature-card">
+            <h3>📊 Monitoring</h3>
+            <p>Integrated with Prometheus and OpenTelemetry</p>
+        </div>
+        <div class="feature-card">
+            <h3>🚀 Microservices Ready</h3>
+            <p>Designed for distributed systems architecture</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
