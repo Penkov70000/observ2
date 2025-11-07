@@ -1,6 +1,8 @@
 import time
 import jwt
+import uuid
 import bcrypt
+from datetime import datetime
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
 from prometheus_client import generate_latest, Counter, Histogram, REGISTRY
 import logging
@@ -12,6 +14,9 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
 from datetime import datetime, timedelta
 import json
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
+from prometheus_client import Gauge, Summary, Histogram, Counter, Info
 
 # OpenTelemetry setup
 resource = Resource(attributes={
@@ -27,17 +32,79 @@ app.secret_key = 'your-secret-key-here'  # Для сессий Flask
 FlaskInstrumentor().instrument_app(app)
 
 # Prometheus metrics
-auth_requests_counter = Counter(
+auth_requests_counter = Counter( #  количество HTTP запросо
     'auth_requests_total',
     'Total number of auth requests',
-    ['method', 'endpoint', 'status']
+    ['method', 'endpoint', 'status'] #  статус код (200, 401, 500)
 )
 
-auth_request_duration = Histogram(
+auth_request_duration = Histogram( #  время выполнения запросов
     'auth_request_duration_seconds',
     'Duration of auth requests in seconds',
-    ['method', 'endpoint']
+    ['method', 'endpoint'], # Лейблы: метод (GET, POST) путь эндпоинта (/login, /register) 
+    buckets=[0.1, 0.5, 1.0, 2.0, 5.0]  # Кастомные бакеты
 )
+
+# НОВЫЕ МЕТРИКИ
+# НОВЫЕ МЕТРИКИ:
+
+# Бизнес-метрики
+active_users_gauge = Gauge(
+    'auth_active_users',
+    'Number of currently active users'
+)
+
+user_registrations_counter = Counter(
+    'auth_user_registrations_total',
+    'Total number of user registrations'
+)
+
+failed_logins_counter = Counter(
+    'auth_failed_logins_total',
+    'Total number of failed login attempts',
+    ['reason']  # wrong_password, user_not_found
+)
+
+successful_logins_counter = Counter(
+    'auth_successful_logins_total',
+    'Total number of successful logins'
+)
+
+# Системные метрики
+jwt_tokens_issued = Counter(
+    'auth_jwt_tokens_issued_total',
+    'Total number of JWT tokens issued'
+)
+
+token_verification_duration = Histogram(
+    'auth_token_verification_duration_seconds',
+    'Duration of token verification',
+    buckets=[0.001, 0.005, 0.01, 0.05, 0.1]
+)
+
+password_hashing_duration = Histogram(
+    'auth_password_hashing_duration_seconds',
+    'Duration of password hashing operations'
+)
+
+# Метрики базы данных (in-memory)
+database_operations_counter = Counter(
+    'auth_database_operations_total',
+    'Total number of database operations',
+    ['operation']  # create, read, update, delete
+)
+
+users_gauge = Gauge(
+    'auth_users_total',
+    'Total number of registered users'
+)
+
+# Информация о сервисе
+service_info = Info(
+    'auth_service_info',
+    'Information about the auth service'
+)
+
 
 # In-memory "database"
 users = []
@@ -196,36 +263,231 @@ def health():
         "users_count": len(users)
     })
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('auth-service')
+
 @app.route('/metrics', methods=['GET'])
 def metrics():
     return generate_latest(REGISTRY), 200, {'Content-Type': 'text/plain'}
 
+
+###########################КАСТОМНОЕ ТРАССИРОВАНИЕ
+def login_user_instrumented(username, password):
+    tracer = trace.get_tracer(__name__)
+    
+    with tracer.start_as_current_span("user_login") as span:
+        # Добавляем атрибуты к span
+        span.set_attribute("user.username", username)
+        span.set_attribute("login.attempt_timestamp", datetime.utcnow().isoformat())
+        
+        try:
+            # Поиск пользователя
+            with tracer.start_as_current_span("find_user"):
+                user = next((u for u in users if u['username'] == username), None)
+                span.set_attribute("user.found", user is not None)
+            
+            if not user:
+                span.set_status(Status(StatusCode.ERROR, "User not found"))
+                span.set_attribute("login.success", False)
+                return None
+                
+            # Проверка пароля
+            with tracer.start_as_current_span("verify_password"):
+                start_time = time.time()
+                is_valid = bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8'))
+                password_duration = time.time() - start_time
+                
+                span.set_attribute("password.verification_duration", password_duration)
+                span.set_attribute("password.valid", is_valid)
+            
+            if not is_valid:
+                span.set_status(Status(StatusCode.ERROR, "Invalid password"))
+                span.set_attribute("login.success", False)
+                return None
+            
+            # Создание токена
+            with tracer.start_as_current_span("create_jwt_token"):
+                token = create_jwt_token(user['id'], user['username'])
+                span.set_attribute("jwt.token_created", True)
+                span.set_attribute("jwt.user_id", user['id'])
+            
+            span.set_status(Status(StatusCode.OK))
+            span.set_attribute("login.success", True)
+            
+            # Обновляем метрики
+            successful_logins_counter.inc()
+            active_users_gauge.inc()
+            
+            return token
+            
+        except Exception as e:
+            span.set_status(Status(StatusCode.ERROR, str(e)))
+            span.record_exception(e)
+            raise
+
+def setup_structured_logging():
+    """Настройка структурированного логирования"""
+    class StructuredFormatter(logging.Formatter):
+        def format(self, record):
+            log_data = {
+                'timestamp': datetime.utcnow().isoformat(),
+                'level': record.levelname,
+                'logger': record.name,
+                'message': record.getMessage(),
+                'service': 'auth-service'
+            }
+            
+            # Добавляем дополнительные поля если есть
+            if hasattr(record, 'user_id'):
+                log_data['user_id'] = record.user_id
+            if hasattr(record, 'endpoint'):
+                log_data['endpoint'] = record.endpoint
+            if hasattr(record, 'duration'):
+                log_data['duration'] = record.duration
+                
+            return json.dumps(log_data)
+    
+    # Применяем форматтер
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(StructuredFormatter())
+
+# Использование структурированных логов
+def log_auth_attempt(username, success, duration=None, error=None):
+    log_data = {
+        'event': 'auth_attempt',
+        'username': username,
+        'success': success,
+        'duration': duration
+    }
+    
+    if error:
+        log_data['error'] = str(error)
+        
+    if success:
+        logger.info("Authentication successful", extra=log_data)
+    else:
+        logger.warning("Authentication failed", extra=log_data)
+
+
+@app.route('/api/login', methods=['POST'])
 @app.route('/api/login', methods=['POST'])
 def api_login():
-    with tracer_provider.get_tracer(__name__).start_as_current_span("api_login"):
-        data = request.get_json()
+    start_time = time.time()
+    request_id = str(uuid.uuid4())
+    
+    # Логируем начало запроса
+    logger.info("Login request started", extra={
+        'request_id': request_id,
+        'endpoint': '/api/login',
+        'method': 'POST'
+    })
+    
+    with tracer_provider.get_tracer(__name__).start_as_current_span("api_login") as span:
+        try:
+            data = request.get_json()
+            span.set_attribute("http.method", "POST")
+            span.set_attribute("http.route", "/api/login")
+            span.set_attribute("request.id", request_id)
+            
+            if not data or 'username' not in data or 'password' not in data:
+                # Метрики
+                auth_requests_counter.labels(method='POST', endpoint='/api/login', status='400').inc()
+                # Логи
+                logger.warning("Invalid login request", extra={
+                    'request_id': request_id,
+                    'error': 'missing_credentials'
+                })
+                # Трассировка
+                span.set_status(Status(StatusCode.ERROR, "Missing credentials"))
+                return jsonify({"error": "Username and password required"}), 400
+            
+            username = data['username']
+            password = data['password']
+            
+            span.set_attribute("user.username", username)
+            
+            # Инструментированный логин
+            token = login_user_instrumented(username, password)
+            
+            duration = time.time() - start_time
+            
+            if token:
+                # Успешный логин
+                auth_requests_counter.labels(method='POST', endpoint='/api/login', status='200').inc()
+                auth_request_duration.labels(method='POST', endpoint='/api/login').observe(duration)
+                
+                logger.info("Login successful", extra={
+                    'request_id': request_id,
+                    'username': username,
+                    'duration': duration,
+                    'user_id': next((u['id'] for u in users if u['username'] == username), None)
+                })
+                
+                span.set_status(Status(StatusCode.OK))
+                
+                return jsonify({
+                    "token": token,
+                    "user_id": next(u['id'] for u in users if u['username'] == username),
+                    "username": username,
+                    "message": "Login successful"
+                })
+            else:
+                # Неуспешный логин
+                auth_requests_counter.labels(method='POST', endpoint='/api/login', status='401').inc()
+                failed_logins_counter.labels(reason='invalid_credentials').inc()
+                
+                logger.warning("Login failed - invalid credentials", extra={
+                    'request_id': request_id,
+                    'username': username,
+                    'duration': duration
+                })
+                
+                span.set_status(Status(StatusCode.ERROR, "Invalid credentials"))
+                return jsonify({"error": "Invalid credentials"}), 401
+                
+        except Exception as e:
+            duration = time.time() - start_time
+            # Ошибка сервера
+            auth_requests_counter.labels(method='POST', endpoint='/api/login', status='500').inc()
+            
+            logger.error("Login error", extra={
+                'request_id': request_id,
+                'error': str(e),
+                'duration': duration
+            })
+            
+            span.set_status(Status(StatusCode.ERROR, str(e)))
+            span.record_exception(e)
+            
+            return jsonify({"error": "Internal server error"}), 500
+# def api_login():
+#     with tracer_provider.get_tracer(__name__).start_as_current_span("api_login"):
+#         data = request.get_json()
         
-        if not data or 'username' not in data or 'password' not in data:
-            return jsonify({"error": "Username and password required"}), 400
+#         if not data or 'username' not in data or 'password' not in data:
+#             return jsonify({"error": "Username and password required"}), 400
         
-        username = data['username']
-        password = data['password']
+#         username = data['username']
+#         password = data['password']
         
-        user = next((u for u in users if u['username'] == username), None)
-        if not user:
-            return jsonify({"error": "Invalid credentials"}), 401
+#         user = next((u for u in users if u['username'] == username), None)
+#         if not user:
+#             return jsonify({"error": "Invalid credentials"}), 401
         
-        if not bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
-            return jsonify({"error": "Invalid credentials"}), 401
+#         if not bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
+#             return jsonify({"error": "Invalid credentials"}), 401
         
-        token = create_jwt_token(user['id'], user['username'])
+#         token = create_jwt_token(user['id'], user['username'])
         
-        return jsonify({
-            "token": token,
-            "user_id": user['id'],
-            "username": user['username'],
-            "message": "Login successful"
-        })
+#         return jsonify({
+#             "token": token,
+#             "user_id": user['id'],
+#             "username": user['username'],
+#             "message": "Login successful"
+#         })
 
 @app.route('/api/register', methods=['POST'])
 def api_register():
