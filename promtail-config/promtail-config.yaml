@@ -1,3 +1,107 @@
+# server:
+#   http_listen_port: 9080
+#   grpc_listen_port: 0
+
+# positions:
+#   filename: /tmp/positions.yaml
+
+# clients:
+#   - url: http://loki:3100/loki/api/v1/push
+# scrape_configs:
+#   - job_name: system
+#     static_configs:
+#       - targets:
+#           - localhost
+#         labels:
+#           job: varlogs
+#           __path__: /var/log/*log
+#   # Сбор логов с Docker контейнеров
+#   - job_name: containers
+#     static_configs:
+#       - targets:
+#           - localhost
+#         labels:
+#           job: containerlpgs
+#           __path__: /var/lib/docker/containers/*/*log
+#   - job_name: auth-service
+#     static_configs:
+#       - targets:
+#           - localhost
+#         labels:
+#           job: auth-service
+#           service: auth
+#           __path__: /var/lib/docker/containers/*/*-json.log
+  
+#     pipeline_stages:
+#       - json:
+#           expressions:
+#             output: log
+#             stream: stream
+#             attrs:
+#       - json:
+#           expressions:
+#             tag: tag
+#           source: attrs
+#       - regex:
+#           expression: '.*service.name":"auth-service".*'
+#           source: tag
+#       - labels:
+#           service: 
+#       - output:
+#           source: output
+
+#   - job_name: gateway-service
+#     static_configs:
+#       - targets:
+#           - localhost
+#         labels:
+#           job: gateway-service
+#           service: gateway
+#           __path__: /var/lib/docker/containers/*/*-json.log
+#     pipeline_stages:
+#       - json:
+#           expressions:
+#             output: log
+#             stream: stream
+#             attrs:
+#       - json:
+#           expressions:
+#             tag: tag
+#           source: attrs
+#       - regex:
+#           expression: '.*service.name":"gateway".*'
+#           source: tag
+#       - labels:
+#           service: 
+#       - output:
+#           source: output
+
+#   - job_name: order-service
+#     static_configs:
+#       - targets:
+#           - localhost
+#         labels:
+#           job: order-service
+#           service: order
+#           __path__: /var/lib/docker/containers/*/*-json.log
+#     pipeline_stages:
+#       - json:
+#           expressions:
+#             output: log
+#             stream: stream
+#             attrs:
+#       - json:
+#           expressions:
+#             tag: tag
+#           source: attrs
+#       - regex:
+#           expression: '.*service.name":"order-service".*'
+#           source: tag
+#       - labels:
+#           service: 
+#       - output:
+#           source: output
+
 server:
   http_listen_port: 9080
   grpc_listen_port: 0
@@ -7,97 +111,44 @@ positions:
 
 clients:
   - url: http://loki:3100/loki/api/v1/push
+
 scrape_configs:
-  - job_name: system
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          job: varlogs
-          __path__: /var/log/*log
-  # Сбор логов с Docker контейнеров
-  - job_name: containers
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          job: containerlpgs
-          __path__: /var/lib/docker/containers/*/*log
-  - job_name: auth-service
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          job: auth-service
-          service: auth
-          __path__: /var/lib/docker/containers/*/*-json.log
-  
-    pipeline_stages:
-      - json:
-          expressions:
-            output: log
-            stream: stream
-            attrs:
-      - json:
-          expressions:
-            tag: tag
-          source: attrs
-      - regex:
-          expression: '.*service.name":"auth-service".*'
-          source: tag
-      - labels:
-          service: 
-      - output:
-          source: output
+  # Сбор логов из Docker-контейнеров
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["logging=promtail"]  # ← Добавьте в docker-compose метку, чтобы фильтровать
 
-  - job_name: gateway-service
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          job: gateway-service
-          service: gateway
-          __path__: /var/lib/docker/containers/*/*-json.log
-    pipeline_stages:
-      - json:
-          expressions:
-            output: log
-            stream: stream
-            attrs:
-      - json:
-          expressions:
-            tag: tag
-          source: attrs
-      - regex:
-          expression: '.*service.name":"gateway".*'
-          source: tag
-      - labels:
-          service: 
-      - output:
-          source: output
+    # Добавляем лейблы из Docker-контейнера
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
+        replacement: '$1'
+      - source_labels: ['__meta_docker_container_image']
+        target_label: 'image'
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
+        target_label: 'job'  # Имя сервиса из docker-compose
+      - source_labels: ['__meta_docker_container_label_com_docker_compose_project']
+        target_label: 'compose_project'
 
-  - job_name: order-service
-    static_configs:
-      - targets:
-          - localhost
-        labels:
-          job: order-service
-          service: order
-          __path__: /var/lib/docker/containers/*/*-json.log
+    # Парсинг JSON-логов из Docker
     pipeline_stages:
-      - json:
-          expressions:
-            output: log
-            stream: stream
-            attrs:
-      - json:
-          expressions:
-            tag: tag
-          source: attrs
-      - regex:
-          expression: '.*service.name":"order-service".*'
-          source: tag
-      - labels:
-          service: 
-      - output:
-          source: output
+      - match:
+          selector: '{job=~"auth-service|order-service|gateway"}'
+          stages:
+            - json:
+                expressions:
+                  output: log  # Извлекаем само сообщение
+                  level: level
+                  timestamp: timestamp
+            - labels:
+                level:
+            - timestamp:
+                source: timestamp
+                format: RFC3339Nano  # или ISO8601
+            - output:
+                source: output

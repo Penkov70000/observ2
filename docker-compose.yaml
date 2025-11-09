@@ -3,6 +3,9 @@ version: '3.8'
 services:
   gateway:
     build: ./gateway
+    labels:
+      logging: "promtail" 
+      com.docker.compose.service: "gateway"
     ports:
       - "8080:8080"
     environment:
@@ -23,6 +26,9 @@ services:
   # Сервис авторизации
   auth-service:
     build: ./auth-service
+    labels:
+      logging: "promtail"  # ← Добавьте
+      com.docker.compose.service: "auth-service"
     ports:
       - "8081:8081"
     environment:
@@ -39,6 +45,9 @@ services:
   # Сервис заказов (обработки данных)
   order-service:
     build: ./order-service
+    labels:
+      logging: "promtail"  # ← Добавьте
+      com.docker.compose.service: "order-service"
     ports:
       - "8082:8082"
     environment:
@@ -99,7 +108,7 @@ services:
     volumes:
       - /var/log:/var/log:ro
       - ./promtail-config/promtail-config.yaml:/etc/promtail/config.yaml:ro
-      - /var/lib/docker/conrainers:/var/lib/docker/containers:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
     command: -config.file=/etc/promtail/config.yaml
     depends_on:
       - loki

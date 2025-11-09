@@ -1,12 +1,12 @@
-import time
-import jwt
+import time # Для замера времени выполнения запросов (метрики)
+import jwt # Работа с JSON Web Tokens (подпись и верификация)
 import uuid
-import bcrypt
+import bcrypt # Безопасное хеширование паролей (с солью)
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
-from prometheus_client import generate_latest, Counter, Histogram, REGISTRY
-import logging
-from opentelemetry import trace
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash # Веб-фреймворк Flask: обработка HTTP-запросов и ответов
+from prometheus_client import generate_latest, Counter, Histogram, REGISTRY # Экспорт метрик в формате Prometheus
+import logging # используется для интеграции логирования
+from opentelemetry import trace # Инструментация для распределённой трассировки (distributed tracing)
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -22,23 +22,48 @@ from prometheus_client import Gauge, Summary, Histogram, Counter, Info
 resource = Resource(attributes={
     "service.name": "auth-service"
 })
+ # неизменяемое представление объекта, генерирующего телеметрию в виде атрибутов
+ # Создаёт ресурс, который будет прикреплён ко всем спанам (trace spans)
+ # Это будет видно в Jaeger как тег service.name = auth-service
 
 trace.set_tracer_provider(TracerProvider(resource=resource))
 tracer_provider = trace.get_tracer_provider()
-tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint="http://otel-collector:4318/v1/traces")))
+# trace — глобальный модуль OpenTelemetry API
+# set_tracer_provider(...) — устанавливает глобальный провайдер, 
+# чтобы вызовы вроде trace.get_tracer(...) возвращали Tracer из этого провайдера.
+# tracer_provider = trace.get_tracer_provider() - Получает тот самый провайдер, который только что установили
+# Нужно, чтобы добавить к нему обработчики спанов (span processors)
+# TracerProvider — фабрика для создания Tracer’ов (объектов, которые создают спаны).
+# resource — метаданные, прикрепляемые ко всем спанам в этом провайдере
+# OTLPSpanExporter отправляет спаны по HTTP в OpenTelemetry Collector или напрямую в бэкенд, например Jaeger, если он поддерживает OTLP
+# По умолчанию отправляет на http://localhost:4318/v1/traces (HTTP endpoint OTLP)
+# Вы можете переопределить: OTLPSpanExporter(endpoint="http://otel-collector:4318/v1/traces")
+# BatchSpanProcessor буферизует спаны и отправляет их пакетами — эффективнее
+# add_span_processor(...) Регистрирует обработчик в провайдере
+# Один провайдер может иметь несколько процессоров (например, один в Jaeger, другой в консоль для дебага)
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # Для сессий Flask
 FlaskInstrumentor().instrument_app(app)
+# Автоматически добавляет спаны вокруг каждого HTTP-запроса к Flask-приложению (включая маршрут, метод, статус и т.д.)
+# Это часть auto-instrumentation OpenTelemetry
 
+# МЕТРИКИ
 # Prometheus metrics
-auth_requests_counter = Counter( #  количество HTTP запросо
+# ● Counter - счетчик, только увеличивается 
+# ● Gauge - текущее значение (вверх и вниз) 
+# ● Histogram - распределение значений по корзинам 
+# ● Summary - квантильные измерения
+auth_requests_counter = Counter( #  количество HTTP запросов, Counter — монотонно возрастающий счётчик
     'auth_requests_total',
     'Total number of auth requests',
-    ['method', 'endpoint', 'status'] #  статус код (200, 401, 500)
+    ['method', 'endpoint', 'status'] 
 )
+# method (GET/POST), endpoint (/login, /verify), status (200, 401 и т.д.)
+# Позволяет строить дашборды: «сколько ошибок 401 на /login?»
 
-auth_request_duration = Histogram( #  время выполнения запросов
+auth_request_duration = Histogram( # распределение времени выполнения запросов
     'auth_request_duration_seconds',
     'Duration of auth requests in seconds',
     ['method', 'endpoint'], # Лейблы: метод (GET, POST) путь эндпоинта (/login, /register) 
@@ -46,8 +71,6 @@ auth_request_duration = Histogram( #  время выполнения запро
 )
 
 # НОВЫЕ МЕТРИКИ
-# НОВЫЕ МЕТРИКИ:
-
 # Бизнес-метрики
 active_users_gauge = Gauge(
     'auth_active_users',
@@ -106,33 +129,116 @@ service_info = Info(
 )
 
 
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# === 1. ОПРЕДЕЛЕНИЕ StructuredFormatter ===
+"""функция настраивает формат логов в приложении, 
+чтобы они выводились в структурированном виде, 
+например, в формате JSON"""
+def setup_structured_logging():
+    """Настройка структурированного логирования"""
+    class StructuredFormatter(logging.Formatter): #Это пользовательский Formatter, наследующийся от logging.Formatter
+        def format(self, record): #Переопределяет метод format, чтобы изменить формат вывода лога
+            log_data = { #Создаётся словарь JSON-объекта лога
+                'timestamp': datetime.isoformat(), #время события
+                'level': record.levelname, #уровень лога (INFO, WARNING, ERROR и т.д.).\
+                'logger': record.name, #имя логгера
+                'message': record.getMessage(), #текст сообщения
+                'service': 'auth-service' #идентификатор сервиса
+            }
+            """Проверяется, есть ли у объекта record 
+            дополнительные атрибуты, переданные 
+            через параметр extra в вызове логгера.
+            Если такие есть, они добавляются в JSON лога"""
+            # Добавляем дополнительные поля если есть
+            if hasattr(record, 'user_id'):
+                log_data['user_id'] = record.user_id
+            if hasattr(record, 'endpoint'):
+                log_data['endpoint'] = record.endpoint
+            if hasattr(record, 'duration'):
+                log_data['duration'] = record.duration
+            #Всё содержимое log_data сериализуется в JSON и возвращается как строка
+            return json.dumps(log_data)
+    
+    # Применяем форматтер ко всем обработчикам логов
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(StructuredFormatter())
+    # На каждый handler (например, консольный или файловый) устанавливается новый StructuredFormatter
+
+
+# === 2. НАСТРОЙКА ЛОГГЕРА ===
+logger = logging.getLogger('auth-service')
+handler = logging.StreamHandler()  # ← Вывод в stdout
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+
+# Использование структурированных логов
+def log_auth_attempt(username, success, duration=None, error=None): #логирует попытки аутентификации
+    log_data = {
+        'event': 'auth_attempt',
+        'username': username,
+        'success': success,
+        'duration': duration
+    }
+    # запись ошибки если есть
+    if error:
+        log_data['error'] = str(error)
+    #Запись лога с различными уровнями
+    if success:
+        logger.info("Authentication successful", extra=log_data)
+    else:
+        logger.warning("Authentication failed", extra=log_data)
+
+
+
 # In-memory "database"
 users = []
 user_id_counter = 1
 
-JWT_SECRET = "your-jwt-secret-key"
-
+JWT_SECRET = "your-jwt-secret-key"  # Секрет для подписи и верификации JWT
+# Это декоратор Flask, регистрирующий функцию-хук, 
+# которая вызывается ПЕРЕД обработкой любого HTTP-запроса (до любого route-обработчика)
 @app.before_request
 def before_request():
     request.start_time = time.time()
+# request — глобальный контекстный объект Flask (thread-local)
+# добавляем атрибут start_time к объекту запроса
+# Позже, в after_request, мы используем его для расчёта длительности  
 
+
+# На вход функция получает объект response, который представляет собой HTTP-ответ
+# который будет отправлен клиенту.
 @app.after_request
 def after_request(response):
     # Skip metrics and static files from metrics
-    if request.path != '/metrics' and not request.path.startswith('/static'):
-        duration = time.time() - request.start_time
-        auth_request_duration.labels(
+    if request.path != '/metrics' and not request.path.startswith('/static'): 
+        duration = time.time() - request.start_time #Вычисляется время выполнения запроса
+        auth_request_duration.labels( #время выполнения запроса
             method=request.method,
             endpoint=request.path
         ).observe(duration)
         
-        auth_requests_counter.labels(
+        auth_requests_counter.labels( #количество обработанных запросов
             method=request.method,
             endpoint=request.path,
             status=response.status_code
         ).inc()
     
     return response
+# Проверяет, не является ли текущий запрос:
+#/metrics — обычно это эндпоинт, откуда Prometheus собирает метрики. 
+#Измерять метрики для этого пути не нужно — это может привести к рекурсии или искажению данных.
+#/static/... — это пути к статическим файлам (CSS, JS, изображения и т.п.). 
+#Они обычно не требуют метрик, так как не отражают бизнес-логику приложения
+#Если путь не подпадает под исключения, то начинается сбор метрик.
+#duration — это время от начала обработки запроса до его завершения, в секундах
+#Записывает время выполнения запроса в метрику Histogram или Summary
+
 
 # Helper functions
 def create_jwt_token(user_id, username):
@@ -171,6 +277,8 @@ def get_current_user():
             return next((u for u in users if u['id'] == payload['user_id']), None)
     
     return None
+
+setup_structured_logging()
 
 # Web UI Routes
 @app.route('/')
@@ -263,11 +371,7 @@ def health():
         "users_count": len(users)
     })
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('auth-service')
+
 
 @app.route('/metrics', methods=['GET'])
 def metrics():
@@ -276,100 +380,64 @@ def metrics():
 
 ###########################КАСТОМНОЕ ТРАССИРОВАНИЕ
 def login_user_instrumented(username, password):
-    tracer = trace.get_tracer(__name__)
+    tracer = trace.get_tracer(__name__) #объект, отвечающий за создание spans и трассировок
+    #__name__ — имя текущего модуля, используется для идентификации источника трассировки
     
-    with tracer.start_as_current_span("user_login") as span:
-        # Добавляем атрибуты к span
-        span.set_attribute("user.username", username)
+    with tracer.start_as_current_span("user_login") as span: #Создаётся корневой span с именем "user_login", который охватывает всю логику функции
+        # Добавляем атрибуты к span/ Использование with гарантирует, что span будет автоматически закрыт после завершения блока.
+        span.set_attribute("user.username", username) #Устанавливаются атрибуты, которые помогают идентифицировать и анализировать вызов
         span.set_attribute("login.attempt_timestamp", datetime.utcnow().isoformat())
         
         try:
             # Поиск пользователя
-            with tracer.start_as_current_span("find_user"):
-                user = next((u for u in users if u['username'] == username), None)
-                span.set_attribute("user.found", user is not None)
-            
+            with tracer.start_as_current_span("find_user"):  #Вложенный span "find_user" обозначает подоперацию — поиск пользователя в списке
+                user = next((u for u in users if u['username'] == username), None) # Поиск пользователя
+                span.set_attribute("user.found", user is not None)  #фиксирует, был ли пользователь найден
+
+
+                
+            #Обработка отсутствия пользователя
             if not user:
-                span.set_status(Status(StatusCode.ERROR, "User not found"))
-                span.set_attribute("login.success", False)
-                return None
+                span.set_status(Status(StatusCode.ERROR, "User not found")) #Устанавливается статус ошибки для span'а.
+                span.set_attribute("login.success", False) #Устанавливается атрибут login.success = False
+                return None #функция возвращает None
                 
             # Проверка пароля
-            with tracer.start_as_current_span("verify_password"):
-                start_time = time.time()
+            with tracer.start_as_current_span("verify_password"): #Вложенный span "verify_password" описывает проверку пароля.
+                start_time = time.time() #Измеряется время выполнения проверки
                 is_valid = bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8'))
                 password_duration = time.time() - start_time
                 
-                span.set_attribute("password.verification_duration", password_duration)
-                span.set_attribute("password.valid", is_valid)
+                span.set_attribute("password.verification_duration", password_duration) #время затраченное на проверку
+                span.set_attribute("password.valid", is_valid) #Правильность пароля
             
             if not is_valid:
                 span.set_status(Status(StatusCode.ERROR, "Invalid password"))
-                span.set_attribute("login.success", False)
+                span.set_attribute("login.success", False) #Аналогично — устанавливается статус ошибки, атрибут успеха
                 return None
             
             # Создание токена
-            with tracer.start_as_current_span("create_jwt_token"):
+            with tracer.start_as_current_span("create_jwt_token"): #Вложенный span "create_jwt_token" — для генерации токена.
                 token = create_jwt_token(user['id'], user['username'])
                 span.set_attribute("jwt.token_created", True)
                 span.set_attribute("jwt.user_id", user['id'])
             
-            span.set_status(Status(StatusCode.OK))
-            span.set_attribute("login.success", True)
+            span.set_status(Status(StatusCode.OK)) #Устанавливается успешный статус span'а
+            span.set_attribute("login.success", True) #Устанавливается атрибут login.success = True
             
             # Обновляем метрики
-            successful_logins_counter.inc()
-            active_users_gauge.inc()
+            successful_logins_counter.inc() #Увеличивается счётчик успешных входов
+            active_users_gauge.inc() #Увеличивается счётчик активных пользователей (gauge)
             
             return token
-            
+        #Обработка исключений    
         except Exception as e:
             span.set_status(Status(StatusCode.ERROR, str(e)))
             span.record_exception(e)
             raise
-
-def setup_structured_logging():
-    """Настройка структурированного логирования"""
-    class StructuredFormatter(logging.Formatter):
-        def format(self, record):
-            log_data = {
-                'timestamp': datetime.utcnow().isoformat(),
-                'level': record.levelname,
-                'logger': record.name,
-                'message': record.getMessage(),
-                'service': 'auth-service'
-            }
-            
-            # Добавляем дополнительные поля если есть
-            if hasattr(record, 'user_id'):
-                log_data['user_id'] = record.user_id
-            if hasattr(record, 'endpoint'):
-                log_data['endpoint'] = record.endpoint
-            if hasattr(record, 'duration'):
-                log_data['duration'] = record.duration
-                
-            return json.dumps(log_data)
-    
-    # Применяем форматтер
-    for handler in logging.getLogger().handlers:
-        handler.setFormatter(StructuredFormatter())
-
-# Использование структурированных логов
-def log_auth_attempt(username, success, duration=None, error=None):
-    log_data = {
-        'event': 'auth_attempt',
-        'username': username,
-        'success': success,
-        'duration': duration
-    }
-    
-    if error:
-        log_data['error'] = str(error)
-        
-    if success:
-        logger.info("Authentication successful", extra=log_data)
-    else:
-        logger.warning("Authentication failed", extra=log_data)
+        #В случае исключения:Устанавливается статус ошибки
+        #Исключение записывается в span с помощью record_exception
+        #Исключение пере-выбрасывается дальше.
 
 
 @app.route('/api/login', methods=['POST'])
