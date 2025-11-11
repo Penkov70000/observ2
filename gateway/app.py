@@ -8,6 +8,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.propagate import inject
 
 # OpenTelemetry setup
 resource = Resource(attributes={
@@ -38,24 +39,6 @@ gateway_request_duration = Histogram(
     ['method', 'endpoint']
 )
 
-# def make_service_request(service_url, path, method='GET', data=None, headers=None):
-#     """Make request to backend service"""
-#     url = f"{service_url}{path}"
-#     headers = headers or {}
-    
-#     try:
-#         if method.upper() == 'GET':
-#             response = requests.get(url, headers=headers, timeout=30)
-#         elif method.upper() == 'POST':
-#             response = requests.post(url, json=data, headers=headers, timeout=30)
-#         else:   
-#             return jsonify({"error": "Method not allowed"}), 405
-            
-#         return response.json(), response.status_code
-#     except requests.exceptions.RequestException as e:
-#         return jsonify({"error": f"Service unavailable: {str(e)}"}), 503
-
-
 def make_service_request(service_url, path, method='GET', data=None, headers=None):
     """Make request to backend service"""
     url = f"{service_url}{path}"
@@ -67,9 +50,8 @@ def make_service_request(service_url, path, method='GET', data=None, headers=Non
         elif method.upper() == 'POST':
             response = requests.post(url, json=data, headers=headers, timeout=30)
         else:
-            return {"error": "Method not allowed"}, 405  # ← dict, не jsonify!
+            return {"error": "Method not allowed"}, 405
             
-        # Попытка распарсить JSON, даже если статус не 2xx
         try:
             json_data = response.json()
         except ValueError:
@@ -113,11 +95,26 @@ def health():
 def metrics():
     return generate_latest(REGISTRY), 200, {'Content-Type': 'text/plain'}
 
-# Auth routes
+# Auth routes - ИСПРАВЛЕННАЯ ВЕРСИЯ
 @app.route('/auth/<path:path>', methods=['POST', 'GET'])
 def auth_proxy(path):
     with tracer_provider.get_tracer(__name__).start_as_current_span("auth_proxy"):
-        headers = {key: value for key, value in request.headers if key.lower() != 'host'}
+        # Создаем заголовки для передачи трассировки
+        headers = {}
+        inject(headers)  # Автоматически использует текущий контекст
+        
+        # Копируем оригинальные заголовки (кроме Host)
+        for key, value in request.headers:
+            if key.lower() != 'host':
+                headers[key] = value
+        
+        # Добавляем Content-Type если его нет
+        if request.method == 'POST' and 'Content-Type' not in headers:
+            headers['Content-Type'] = 'application/json'
+        
+        # Логируем для отладки
+        print(f"Proxying to auth-service: {request.method} /{path}")
+        print(f"Headers: {headers}")
         
         data = request.get_json(silent=True) if request.method == 'POST' else None
         
@@ -150,17 +147,19 @@ def orders_proxy(path=None):
                 return jsonify({"error": "Invalid token"}), 401
                 
             auth_data = auth_response.json()
-        except requests.exceptions.RequestException:
-            return jsonify({"error": "Authentication service unavailable"}), 503
+        except requests.exceptions.RequestException as e:
+            return jsonify({"error": f"Authentication service unavailable: {str(e)}"}), 503
         
         # Prepare headers for order service
-        headers = {
-            'Authorization': f'Bearer {token}',
-            'X-User-Id': str(auth_data['user']['user_id']),
-            'X-Username': auth_data['user']['username']
-        }
+        headers = {}
+        inject(headers)  # Трассировка
         
-        # Add content type for POST requests
+        # Базовые заголовки
+        headers['Authorization'] = f'Bearer {token}'
+        headers['X-User-Id'] = str(auth_data['user']['user_id'])
+        headers['X-Username'] = auth_data['user']['username']
+        
+        # Content-Type для POST
         if request.method == 'POST':
             headers['Content-Type'] = 'application/json'
         

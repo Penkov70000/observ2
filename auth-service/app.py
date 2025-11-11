@@ -145,7 +145,7 @@ def setup_structured_logging():
     class StructuredFormatter(logging.Formatter): #Это пользовательский Formatter, наследующийся от logging.Formatter
         def format(self, record): #Переопределяет метод format, чтобы изменить формат вывода лога
             log_data = { #Создаётся словарь JSON-объекта лога
-                'timestamp': datetime.isoformat(), #время события
+                'timestamp': datetime.datetime.now().isoformat(),
                 'level': record.levelname, #уровень лога (INFO, WARNING, ERROR и т.д.).\
                 'logger': record.name, #имя логгера
                 'message': record.getMessage(), #текст сообщения
