@@ -39,10 +39,42 @@ gateway_request_duration = Histogram(
     ['method', 'endpoint']
 )
 
+# def make_service_request(service_url, path, method='GET', data=None, headers=None):
+#     """Make request to backend service"""
+#     url = f"{service_url}{path}"
+#     headers = headers or {}
+    
+#     try:
+#         if method.upper() == 'GET':
+#             response = requests.get(url, headers=headers, timeout=30)
+#         elif method.upper() == 'POST':
+#             response = requests.post(url, json=data, headers=headers, timeout=30)
+#         else:
+#             return {"error": "Method not allowed"}, 405
+            
+#         try:
+#             json_data = response.json()
+#         except ValueError:
+#             json_data = {"error": "Invalid JSON response from service"}
+            
+#         return json_data, response.status_code
+        
+#     except requests.exceptions.Timeout:
+#         return {"error": "Service timeout"}, 504
+#     except requests.exceptions.ConnectionError:
+#         return {"error": "Service unavailable"}, 503
+#     except requests.exceptions.RequestException as e:
+#         return {"error": f"Request failed: {str(e)}"}, 500
+
 def make_service_request(service_url, path, method='GET', data=None, headers=None):
-    """Make request to backend service"""
+    """Make request to backend service with better error handling"""
     url = f"{service_url}{path}"
     headers = headers or {}
+    
+    print(f"🔄 Making {method} request to: {url}")
+    print(f"🔍 Headers: {headers}")
+    if data:
+        print(f"🔍 Data: {data}")
     
     try:
         if method.upper() == 'GET':
@@ -51,20 +83,37 @@ def make_service_request(service_url, path, method='GET', data=None, headers=Non
             response = requests.post(url, json=data, headers=headers, timeout=30)
         else:
             return {"error": "Method not allowed"}, 405
-            
-        try:
-            json_data = response.json()
-        except ValueError:
-            json_data = {"error": "Invalid JSON response from service"}
-            
-        return json_data, response.status_code
         
+        print(f"🔄 Response status: {response.status_code}")
+        print(f"🔄 Response content-type: {response.headers.get('content-type')}")
+        print(f"🔄 Response text (first 500 chars): {response.text[:500]}")
+        
+        # Пробуем разные форматы ответа
+        content_type = response.headers.get('content-type', '').lower()
+        
+        if 'application/json' in content_type:
+            try:
+                json_data = response.json()
+                return json_data, response.status_code
+            except ValueError as e:
+                print(f"❌ JSON decode error: {e}")
+                return {"error": f"Invalid JSON in response: {response.text[:200]}"}, 500
+        else:
+            # Если не JSON, анализируем что вернулось
+            if response.status_code == 404:
+                return {"error": f"Endpoint not found: {path}"}, 404
+            elif response.status_code == 405:
+                return {"error": "Method not allowed"}, 405
+            else:
+                return {"error": f"Unexpected response format: {content_type}. Response: {response.text[:200]}"}, 500
+            
     except requests.exceptions.Timeout:
         return {"error": "Service timeout"}, 504
     except requests.exceptions.ConnectionError:
-        return {"error": "Service unavailable"}, 503
+        return {"error": "Service connection failed"}, 503
     except requests.exceptions.RequestException as e:
         return {"error": f"Request failed: {str(e)}"}, 500
+
 
 @app.before_request
 def before_request():

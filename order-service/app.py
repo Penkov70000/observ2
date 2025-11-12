@@ -21,7 +21,7 @@ tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 app = Flask(__name__)
 FlaskInstrumentor().instrument_app(app)
 
-# Configuration
+# Configuration - ИСПРАВЛЕННЫЙ URL
 AUTH_SERVICE_URL = "http://auth-service:8081"
 
 # Prometheus metrics
@@ -42,15 +42,51 @@ orders = []
 order_id_counter = 1
 
 def authenticate_token(token):
-    """Verify token with auth service"""
+    """Verify token with auth service with debugging"""
+    if not token:
+        print("❌ No token provided")
+        return False, None
+        
+    print(f"🔐 Authenticating token: {token[:20]}...")
+    
+    # ИСПРАВЛЕННЫЙ URL - добавляем /api
+    auth_url = f"{AUTH_SERVICE_URL}/api/verify"  # ← ВАЖНО: добавили /api
+    print(f"🔐 Making request to: {auth_url}")
+    
     try:
         response = requests.post(
-            f"{AUTH_SERVICE_URL}/verify",
-            headers={'Authorization': f'Bearer {token}'},
+            auth_url,
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json'  # ← Добавляем Content-Type
+            },
             timeout=5
         )
-        return response.status_code == 200, response.json() if response.status_code == 200 else None
-    except requests.exceptions.RequestException:
+        
+        print(f"🔐 Auth service response: {response.status_code}")
+        print(f"🔐 Response headers: {dict(response.headers)}")
+        print(f"🔐 Response text: {response.text}")
+        
+        if response.status_code == 200:
+            auth_data = response.json()
+            print(f"✅ Token valid: {auth_data}")
+            return True, auth_data
+        else:
+            print(f"❌ Token invalid. Status: {response.status_code}")
+            return False, None
+            
+    except requests.exceptions.Timeout:
+        print("❌ Auth service timeout")
+        return False, None
+    except requests.exceptions.ConnectionError as e:
+        print(f"❌ Cannot connect to auth service at {auth_url}")
+        print(f"❌ Connection error: {e}")
+        return False, None
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Auth service error: {e}")
+        return False, None
+    except Exception as e:
+        print(f"❌ Unexpected error in authenticate_token: {e}")
         return False, None
 
 @app.before_request

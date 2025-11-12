@@ -271,7 +271,7 @@ def register_page():
         user_id_counter += 1
         
         flash('Registration successful! Please login.', 'success')
-        return redirect(url_for('login_page')
+        return redirect(url_for('login_page'))
     
     return render_template('register.html')
 
@@ -366,91 +366,91 @@ def login_user_instrumented(username, password):
             span.record_exception(e)
             raise
 
-@app.route('/api/login', methods=['POST'])
-def api_login():
-    start_time = time.time()
-    request_id = str(uuid.uuid4())
+# @app.route('/api/login', methods=['POST'])
+# def api_login():
+#     start_time = time.time()
+#     request_id = str(uuid.uuid4())
     
-    logger.info("Login request started", extra={
-        'request_id': request_id,
-        'endpoint': '/api/login',
-        'method': 'POST'
-    })
+#     logger.info("Login request started", extra={
+#         'request_id': request_id,
+#         'endpoint': '/api/login',
+#         'method': 'POST'
+#     })
     
-    with tracer_provider.get_tracer(__name__).start_as_current_span("api_login") as span:
-        try:
-            data = request.get_json()
-            span.set_attribute("http.method", "POST")
-            span.set_attribute("http.route", "/api/login")
-            span.set_attribute("request.id", request_id)
+#     with tracer_provider.get_tracer(__name__).start_as_current_span("api_login") as span:
+#         try:
+#             data = request.get_json()
+#             span.set_attribute("http.method", "POST")
+#             span.set_attribute("http.route", "/api/login")
+#             span.set_attribute("request.id", request_id)
             
-            if not data or 'username' not in data or 'password' not in data:
-                auth_requests_counter.labels(method='POST', endpoint='/api/login', status='400').inc()
+#             if not data or 'username' not in data or 'password' not in data:
+#                 auth_requests_counter.labels(method='POST', endpoint='/api/login', status='400').inc()
                 
-                logger.warning("Invalid login request", extra={
-                    'request_id': request_id,
-                    'error': 'missing_credentials'
-                })
+#                 logger.warning("Invalid login request", extra={
+#                     'request_id': request_id,
+#                     'error': 'missing_credentials'
+#                 })
                 
-                span.set_status(Status(StatusCode.ERROR, "Missing credentials"))
-                return jsonify({"error": "Username and password required"}), 400
+#                 span.set_status(Status(StatusCode.ERROR, "Missing credentials"))
+#                 return jsonify({"error": "Username and password required"}), 400
             
-            username = data['username']
-            password = data['password']
+#             username = data['username']
+#             password = data['password']
             
-            span.set_attribute("user.username", username)
+#             span.set_attribute("user.username", username)
             
-            token = login_user_instrumented(username, password)
-            duration = time.time() - start_time
+#             token = login_user_instrumented(username, password)
+#             duration = time.time() - start_time
             
-            if token:
-                auth_requests_counter.labels(method='POST', endpoint='/api/login', status='200').inc()
-                auth_request_duration.labels(method='POST', endpoint='/api/login').observe(duration)
+#             if token:
+#                 auth_requests_counter.labels(method='POST', endpoint='/api/login', status='200').inc()
+#                 auth_request_duration.labels(method='POST', endpoint='/api/login').observe(duration)
                 
-                user_id = next((u['id'] for u in users if u['username'] == username), None)
+#                 user_id = next((u['id'] for u in users if u['username'] == username), None)
                 
-                logger.info("Login successful", extra={
-                    'request_id': request_id,
-                    'username': username,
-                    'duration': duration,
-                    'user_id': user_id
-                })
+#                 logger.info("Login successful", extra={
+#                     'request_id': request_id,
+#                     'username': username,
+#                     'duration': duration,
+#                     'user_id': user_id
+#                 })
                 
-                span.set_status(Status(StatusCode.OK))
+#                 span.set_status(Status(StatusCode.OK))
                 
-                return jsonify({
-                    "token": token,
-                    "user_id": user_id,
-                    "username": username,
-                    "message": "Login successful"
-                })
-            else:
-                auth_requests_counter.labels(method='POST', endpoint='/api/login', status='401').inc()
-                failed_logins_counter.labels(reason='invalid_credentials').inc()
+#                 return jsonify({
+#                     "token": token,
+#                     "user_id": user_id,
+#                     "username": username,
+#                     "message": "Login successful"
+#                 })
+#             else:
+#                 auth_requests_counter.labels(method='POST', endpoint='/api/login', status='401').inc()
+#                 failed_logins_counter.labels(reason='invalid_credentials').inc()
                 
-                logger.warning("Login failed - invalid credentials", extra={
-                    'request_id': request_id,
-                    'username': username,
-                    'duration': duration
-                })
+#                 logger.warning("Login failed - invalid credentials", extra={
+#                     'request_id': request_id,
+#                     'username': username,
+#                     'duration': duration
+#                 })
                 
-                span.set_status(Status(StatusCode.ERROR, "Invalid credentials"))
-                return jsonify({"error": "Invalid credentials"}), 401
+#                 span.set_status(Status(StatusCode.ERROR, "Invalid credentials"))
+#                 return jsonify({"error": "Invalid credentials"}), 401
                 
-        except Exception as e:
-            duration = time.time() - start_time
-            auth_requests_counter.labels(method='POST', endpoint='/api/login', status='500').inc()
+#         except Exception as e:
+#             duration = time.time() - start_time
+#             auth_requests_counter.labels(method='POST', endpoint='/api/login', status='500').inc()
             
-            logger.error("Login error", extra={
-                'request_id': request_id,
-                'error': str(e),
-                'duration': duration
-            })
+#             logger.error("Login error", extra={
+#                 'request_id': request_id,
+#                 'error': str(e),
+#                 'duration': duration
+#             })
             
-            span.set_status(Status(StatusCode.ERROR, str(e)))
-            span.record_exception(e)
+#             span.set_status(Status(StatusCode.ERROR, str(e)))
+#             span.record_exception(e)
             
-            return jsonify({"error": "Internal server error"}), 500
+#             return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/api/register', methods=['POST'])
 def api_register():
@@ -543,6 +543,115 @@ def api_get_profile():
             "created_at": current_user.get("created_at", "")
         }
     })
+
+
+@app.errorhandler(404)
+def not_found(error):
+    """Return JSON instead of HTML for 404 errors"""
+    return jsonify({"error": "Endpoint not found"}), 404
+
+@app.errorhandler(405)
+def method_not_allowed(error):
+    """Return JSON instead of HTML for 405 errors"""
+    return jsonify({"error": "Method not allowed"}), 405
+
+@app.errorhandler(500)
+def internal_server_error(error):
+    """Return JSON instead of HTML for 500 errors"""
+    return jsonify({"error": "Internal server error"}), 500
+
+# Обновите эндпоинт api_login чтобы явно указывать Content-Type
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    start_time = time.time()
+    request_id = str(uuid.uuid4())
+    
+    logger.info("Login request started", extra={
+        'request_id': request_id,
+        'endpoint': '/api/login',
+        'method': 'POST'
+    })
+    
+    with tracer_provider.get_tracer(__name__).start_as_current_span("api_login") as span:
+        try:
+            # Проверяем Content-Type
+            if not request.is_json:
+                return jsonify({"error": "Content-Type must be application/json"}), 400
+                
+            data = request.get_json()
+            span.set_attribute("http.method", "POST")
+            span.set_attribute("http.route", "/api/login")
+            span.set_attribute("request.id", request_id)
+            
+            if not data or 'username' not in data or 'password' not in data:
+                auth_requests_counter.labels(method='POST', endpoint='/api/login', status='400').inc()
+                
+                logger.warning("Invalid login request", extra={
+                    'request_id': request_id,
+                    'error': 'missing_credentials'
+                })
+                
+                span.set_status(Status(StatusCode.ERROR, "Missing credentials"))
+                return jsonify({"error": "Username and password required"}), 400
+            
+            username = data['username']
+            password = data['password']
+            
+            span.set_attribute("user.username", username)
+            
+            token = login_user_instrumented(username, password)
+            duration = time.time() - start_time
+            
+            if token:
+                auth_requests_counter.labels(method='POST', endpoint='/api/login', status='200').inc()
+                auth_request_duration.labels(method='POST', endpoint='/api/login').observe(duration)
+                
+                user_id = next((u['id'] for u in users if u['username'] == username), None)
+                
+                logger.info("Login successful", extra={
+                    'request_id': request_id,
+                    'username': username,
+                    'duration': duration,
+                    'user_id': user_id
+                })
+                
+                span.set_status(Status(StatusCode.OK))
+                
+                response = jsonify({
+                    "token": token,
+                    "user_id": user_id,
+                    "username": username,
+                    "message": "Login successful"
+                })
+                response.headers['Content-Type'] = 'application/json'
+                return response
+            else:
+                auth_requests_counter.labels(method='POST', endpoint='/api/login', status='401').inc()
+                failed_logins_counter.labels(reason='invalid_credentials').inc()
+                
+                logger.warning("Login failed - invalid credentials", extra={
+                    'request_id': request_id,
+                    'username': username,
+                    'duration': duration
+                })
+                
+                span.set_status(Status(StatusCode.ERROR, "Invalid credentials"))
+                return jsonify({"error": "Invalid credentials"}), 401
+                
+        except Exception as e:
+            duration = time.time() - start_time
+            auth_requests_counter.labels(method='POST', endpoint='/api/login', status='500').inc()
+            
+            logger.error("Login error", extra={
+                'request_id': request_id,
+                'error': str(e),
+                'duration': duration
+            })
+            
+            span.set_status(Status(StatusCode.ERROR, str(e)))
+            span.record_exception(e)
+            
+            return jsonify({"error": "Internal server error"}), 500
 
 # ========== ЗАПУСК ==========
 
